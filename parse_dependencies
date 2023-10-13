@@ -1,0 +1,82 @@
+#!/bin/bash
+#
+# Copyright (C) 2023  Keith Valin kvalin@redhat.com
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#
+
+#
+# Parses a dependency YAML file and prints out
+# a comma separated list of packages.
+#
+
+install_deps()
+{
+	sys_arch=`arch`
+	if [ "$sys_arch" == "x86_64" ]; then
+		sys_arch="amd64"
+	elif [ "$sys_arch" == "aarch64" ]; then
+		sys_arch="arm64"
+	fi
+
+	if ! command -v yq > /dev/null 2>&1; then
+		if ! command -v wget > /dev/null 2>&1; then
+			if command -v yum > /dev/null 2>&1; then
+				yum install -y wget
+			else
+				apt install -y wget
+			fi
+		fi
+
+		version="v4.35.1"
+		bin_name="yq_linux_$sys_arch"
+		wget --quiet https://github.com/mikefarah/yq/releases/download/$version/$bin_name -O /usr/bin/yq
+		chmod +x /usr/bin/yq
+	fi
+}
+
+if [ $# -le 1 ]; then
+	echo "Usage: $0 <yaml file containing dependencies>" > /dev/stderr
+	exit 1
+fi
+
+version=`test_tools/detect_os --os-version`
+os=`test_tools/detect_os`
+
+packages="`yq -r '.all | @csv' $1`"
+
+GLOBIGNORE="*"
+best_diff=0 #0 is worst diff
+best_key="*"
+for key in `yq -r ".$os | keys | @csv" $1 | tr ',' ' ' | sed -e 's/"//g'`;do
+	# Use BASH globbing to verify the OS version matches
+	if [[ "$version" == $key ]]; then
+		# Remove the wildcards to see how strict the key is
+		weight=`echo -n "$key" | sed -e 's/*//g' | wc -c`
+		if [[ "$weight" -gt "$best_diff" ]]; then
+			best_diff=$weight
+			best_key=$key
+		fi
+	fi
+done
+
+# The bracket syntax is needed since yq can handle
+# * characters, but is very picky about it
+query=".$os[\"$best_key\"]"
+additional_pkgs=`yq -r "$query | @csv" $1`
+
+GLOBIGNORE=""
+
+echo "$packages,$additional_pkgs" | sed -e 's/\"//g'
