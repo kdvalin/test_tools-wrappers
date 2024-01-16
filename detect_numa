@@ -3,7 +3,9 @@
 get_nodes=0
 get_cpus=0
 remove_empty_nodes=1
+get_memory=0
 lscpu_command="lscpu"
+memory_command="numactl -H"
 node=""
 
 usage()
@@ -84,15 +86,21 @@ fetch_cpus() {
     $lscpu_command | grep -E "$prefix$node" | sort | awk '{ print $4 }'
 }
 
+get_memory() {
+    $memory_command | grep "node" | grep "size" | awk '{ print $4 }'
+}
+
 NOARG_OPTS=(
     "h"
     "help"
     "usage"
-
+    
     "cpu-list"
     "list-cpu"
     "node-count"
     "include-empty"
+    "memory"
+    "m"
 )
 
 ARG_OPTS=(
@@ -106,7 +114,7 @@ opts=$(getopt \
     --longoptions "$(printf "%s," "${NOARG_OPTS[@]}")" \
     --longoptions "$(printf "%s:," "${ARG_OPTS[@]}")" \
     --name "$(basename "$0")" \
-    --options "hi:n:" \
+    --options "hmi:n:" \
     -- "$@"
 )
 
@@ -139,6 +147,10 @@ while [[ $# -gt 0 ]]; do
     ;;
     --include-empty)
         remove_empty_nodes=0
+        shift 1
+    ;;
+    -m | --memory)
+        get_memory=1
         shift 1
     ;;
     --)
