@@ -87,12 +87,27 @@ fetch_cpus() {
 }
 
 get_memory() {
-    local node_mem=`$memory_command | grep "node" | grep "size" | awk '{ print $4 }'`
+    local node_mem=0
+    local node_count=`get_num_nodes`
+    if [ `has_numa` -eq 0 ]; then # If NUMA is not available, all memory is in the "NUMA" node
+        node_mem=`free -m | grep Mem | awk '{ print $2 }'`
+    else
+        if [ -z "$node" ]; then # Used to filter out "NUMA node(s)" line
+            node="[0-9]+"
+        elif ! echo "$node" | grep -Eq "^(-)?[0-9]+$"; then # If node is not in numerical format, it must be range/comma separated
+            node=`echo "[$node]" | sed -e 's/,/|/g'`
+        elif [ $node -gt $((node_count-1)) ] || [ $node -lt 0 ]; then #If a single integer is provided, verify it's within bounds
+            echo "Error: NUMA Node $node does not exist" > /dev/stderr
+            exit 1
+        fi
+        node_mem=`$memory_command | grep -E "node $node size" | awk '{ print $4 }'`
+    fi
+
     if [ $remove_empty_nodes -ne 0 ]; then
         node_mem=`echo "$node_mem" | grep -v "^$"`
     fi
 
-    echo $node_mem
+    echo "$node_mem"
 }
 
 NOARG_OPTS=(
@@ -142,7 +157,7 @@ while [[ $# -gt 0 ]]; do
         get_cpus=1
         shift 1
     ;;
-    -n | --node-count)
+    --node-count)
         get_nodes=1
         shift 1
     ;;
@@ -172,8 +187,9 @@ if [ $get_nodes -eq 1 ] && [ $get_cpus -eq 1 ];then
     usage
 fi
 
-# Get nodes by default if nothing is specified
-if [ $get_nodes -eq 1 ] || [ $get_cpus -eq $get_nodes ]; then
+if [ $get_memory -eq 1 ]; then
+    get_memory
+elif [ $get_nodes -eq 1 ] || [ $get_cpus -eq $get_nodes ]; then
     get_num_nodes
 else
     fetch_cpus $node
