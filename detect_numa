@@ -87,7 +87,12 @@ fetch_cpus() {
 }
 
 get_memory() {
-    $memory_command | grep "node" | grep "size" | awk '{ print $4 }'
+    local node_mem=`$memory_command | grep "node" | grep "size" | awk '{ print $4 }'`
+    if [ $remove_empty_nodes -ne 0 ]; then
+        node_mem=`echo "$node_mem" | grep -v "^$"`
+    fi
+
+    echo $node_mem
 }
 
 NOARG_OPTS=(
